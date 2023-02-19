@@ -2,6 +2,16 @@
 name = "image-classification"
 version = "0.1.0"
 edition = "2021"
+description = "dfdx image classification"
+license = "MIT OR Apache-2.0"
+
+keywords = [
+    "dfdx",
+    "deep-learning",
+    "neural-network",
+    "image",
+    "image-classification"
+]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

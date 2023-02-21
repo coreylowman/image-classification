@@ -16,3 +16,9 @@ keywords = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+curl = { version = "0.4.44" }
+flate2 = { version = "1.0.25" }
+indicatif = { version = "0.17.3" }
+md5 = { version = "0.7.0" }
+tar = { version = "0.4.38" }
+image = { version = "0.24.5" }

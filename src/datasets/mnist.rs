@@ -1,4 +1,3 @@
-use curl::easy::Easy;
 use image::GrayImage;
 use std::{
     fs::File,
@@ -7,18 +6,13 @@ use std::{
 };
 
 use super::{
-    errors::DownloadError,
+    download::{download_to, DownloadError},
     split::{DatasetSplit, SplitNotFoundError},
 };
 
 pub struct Mnist {
     data: Vec<(image::GrayImage, u8)>,
 }
-
-const TRAIN_IMG_NAME: &str = "train-images-idx3-ubyte";
-const TRAIN_LBL_NAME: &str = "train-labels-idx1-ubyte";
-const TEST_IMG_NAME: &str = "t10k-images-idx3-ubyte";
-const TEST_LBL_NAME: &str = "t10k-labels-idx1-ubyte";
 
 impl Mnist {
     pub fn new<P: AsRef<Path>>(
@@ -32,13 +26,18 @@ impl Mnist {
         }
     }
 
-    pub fn load<P: AsRef<Path>>(
+    fn load<P: AsRef<Path>>(
         root: P,
         img_name: &str,
         lbl_name: &str,
         num: usize,
     ) -> Result<Self, DownloadError> {
         let root = root.as_ref();
+        let root = if root.ends_with("mnist") {
+            root.to_path_buf()
+        } else {
+            root.join("mnist")
+        };
 
         let img_path = root.join(img_name);
         let lbl_path = root.join(lbl_name);
@@ -63,7 +62,9 @@ impl Mnist {
         }
         Ok(Self { data })
     }
+}
 
+impl Mnist {
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -109,6 +110,10 @@ fn read_u32<R: std::io::Read>(r: &mut R) -> Result<u32, std::io::Error> {
 }
 
 const BASE_URL: &str = "http://yann.lecun.com/exdb/mnist/";
+const TRAIN_IMG_NAME: &str = "train-images-idx3-ubyte";
+const TRAIN_LBL_NAME: &str = "train-labels-idx1-ubyte";
+const TEST_IMG_NAME: &str = "t10k-images-idx3-ubyte";
+const TEST_LBL_NAME: &str = "t10k-labels-idx1-ubyte";
 const RESOURCES: [(&str, &str); 4] = [
     (
         "train-images-idx3-ubyte.gz",
@@ -131,53 +136,11 @@ const RESOURCES: [(&str, &str); 4] = [
 fn download_all<P: AsRef<Path>>(root: P) -> Result<(), DownloadError> {
     let root = root.as_ref();
     for (name, md5) in RESOURCES {
-        download(root, name, md5)?;
+        let uncompressed = download_to(root, &std::format!("{BASE_URL}{name}"), md5)?;
+        let path = root.join(name.replace(".gz", ""));
+        println!("Writing {} bytes to {}", uncompressed.len(), path.display());
+        let mut o = BufWriter::new(File::create(path)?);
+        o.write_all(&uncompressed)?;
     }
-    Ok(())
-}
-
-fn download<P: AsRef<Path>>(root: P, name: &str, md5: &str) -> Result<(), DownloadError> {
-    let root = root.as_ref();
-    std::fs::create_dir_all(root)?;
-
-    let url = BASE_URL.to_owned() + name;
-
-    let mut compressed = Vec::new();
-    let mut easy = Easy::new();
-    easy.url(&url).unwrap();
-    easy.progress(true).unwrap();
-
-    println!("Downloading {name}");
-    {
-        let mut dl = easy.transfer();
-        let pb = indicatif::ProgressBar::new(1);
-        dl.progress_function(move |total_dl, cur_dl, _, _| {
-            pb.set_length(total_dl as u64);
-            pb.set_position(cur_dl as u64);
-            true
-        })?;
-        dl.write_function(|data| {
-            compressed.extend_from_slice(data);
-            Ok(data.len())
-        })?;
-        dl.perform()?;
-    }
-
-    println!("Verifying hash is {md5}");
-    let digest = md5::compute(&compressed);
-    if format!("{:?}", digest) != md5 {
-        return Err(DownloadError::Md5Mismatch);
-    }
-
-    println!("Deflating {} bytes", compressed.len());
-    let mut uncompressed = Vec::new();
-    let mut decoder = flate2::read::GzDecoder::new(&compressed[..]);
-    decoder.read_to_end(&mut uncompressed)?;
-
-    let path = root.join(name.replace(".gz", ""));
-    println!("Writing {} bytes to {}", uncompressed.len(), path.display());
-    let mut o = BufWriter::new(File::create(path)?);
-    o.write_all(&uncompressed)?;
-
     Ok(())
 }

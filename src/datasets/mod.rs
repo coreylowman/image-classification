@@ -1,5 +1,5 @@
 pub mod cifar10;
-pub mod errors;
+pub(crate) mod download;
 pub mod mnist;
 pub mod split;
 

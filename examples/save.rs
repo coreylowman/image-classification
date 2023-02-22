@@ -1,7 +1,7 @@
-use image_classification::datasets::{cifar10::Cifar10, split::DatasetSplit};
+use image_classification::datasets::{Cifar10, DatasetSplit, Mnist};
 
 fn main() {
-    let dataset = Cifar10::new("./datasets", DatasetSplit::Test)
+    let dataset = Mnist::new("./datasets", DatasetSplit::Test)
         .unwrap()
         .unwrap();
     for i in 0..10 {

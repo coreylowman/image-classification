@@ -22,15 +22,18 @@ impl std::ops::Index<usize> for Cifar10 {
     }
 }
 
-impl Cifar10 {
-    pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+impl dfdx::data::ExactSizeDataset for Cifar10 {
+    type Item = (image::RgbImage, usize);
+    fn get(&self, index: usize) -> Self::Item {
+        let (img, lbl) = &self.data[index];
+        (img.clone(), *lbl as usize)
     }
-
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.data.len()
     }
+}
 
+impl Cifar10 {
     pub fn label_name(&self, lbl: u8) -> &'static str {
         LABEL_NAMES[lbl as usize]
     }

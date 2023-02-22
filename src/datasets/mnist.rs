@@ -72,6 +72,10 @@ impl Mnist {
     pub fn len(&self) -> usize {
         self.data.len()
     }
+
+    pub fn label_name(&self, lbl: u8) -> &'static str {
+        LABEL_NAMES[lbl as usize]
+    }
 }
 
 impl std::ops::Index<usize> for Mnist {
@@ -144,3 +148,5 @@ fn download_all<P: AsRef<Path>>(root: P) -> Result<(), DownloadError> {
     }
     Ok(())
 }
+
+const LABEL_NAMES: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];

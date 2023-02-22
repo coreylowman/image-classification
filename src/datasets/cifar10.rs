@@ -15,19 +15,6 @@ pub struct Cifar10 {
     data: Vec<(RgbImage, u8)>,
 }
 
-pub const LABEL_NAMES: [&str; 10] = [
-    "Airplane",
-    "Automobile",
-    "Bird",
-    "Cat",
-    "Deer",
-    "Dog",
-    "Frog",
-    "Horse",
-    "Ship",
-    "Truck",
-];
-
 impl std::ops::Index<usize> for Cifar10 {
     type Output = (RgbImage, u8);
     fn index(&self, index: usize) -> &Self::Output {
@@ -42,6 +29,10 @@ impl Cifar10 {
 
     pub fn len(&self) -> usize {
         self.data.len()
+    }
+
+    pub fn label_name(&self, lbl: u8) -> &'static str {
+        LABEL_NAMES[lbl as usize]
     }
 }
 
@@ -116,3 +107,16 @@ fn load_bin<P: AsRef<Path>>(path: P, data: &mut Vec<(RgbImage, u8)>) -> Result<(
     }
     Ok(())
 }
+
+pub const LABEL_NAMES: [&str; 10] = [
+    "Airplane",
+    "Automobile",
+    "Bird",
+    "Cat",
+    "Deer",
+    "Dog",
+    "Frog",
+    "Horse",
+    "Ship",
+    "Truck",
+];

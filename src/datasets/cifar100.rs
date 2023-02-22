@@ -4,31 +4,16 @@ use std::{
     path::Path,
 };
 
-use curl::easy::Easy;
-
 use image::{Rgb, RgbImage};
 
 use super::{
-    errors::DownloadError,
+    download::{download_to, DownloadError},
     split::{DatasetSplit, SplitNotFoundError},
 };
 
 pub struct Cifar100 {
     data: Vec<(RgbImage, u8)>,
 }
-
-pub const LABEL_NAMES: [&str; 10] = [
-    "Airplane",
-    "Automobile",
-    "Bird",
-    "Cat",
-    "Deer",
-    "Dog",
-    "Frog",
-    "Horse",
-    "Ship",
-    "Truck",
-];
 
 impl std::ops::Index<usize> for Cifar100 {
     type Output = (RgbImage, u8);
@@ -45,18 +30,11 @@ impl Cifar100 {
     pub fn len(&self) -> usize {
         self.data.len()
     }
+
+    pub fn label_name(&self, lbl: u8) -> &'static str {
+        LABEL_NAMES[lbl as usize]
+    }
 }
-
-const DIR_NAME: &str = "cifar-10-batches-bin";
-const TRAIN_FILES: [&str; 5] = [
-    "data_batch_1.bin",
-    "data_batch_2.bin",
-    "data_batch_3.bin",
-    "data_batch_4.bin",
-    "data_batch_5.bin",
-];
-
-const TEST_FILES: [&str; 1] = ["test_batch.bin"];
 
 impl Cifar100 {
     pub fn new<P: AsRef<Path>>(
@@ -64,13 +42,13 @@ impl Cifar100 {
         split: DatasetSplit,
     ) -> Result<Result<Self, DownloadError>, SplitNotFoundError> {
         match split {
-            DatasetSplit::Train => Ok(Self::load(root, &TRAIN_FILES)),
-            DatasetSplit::Test => Ok(Self::load(root, &TEST_FILES)),
+            DatasetSplit::Train => Ok(Self::load(root, TRAIN_FILE, NUM_TRAIN_EXAMPLES)),
+            DatasetSplit::Test => Ok(Self::load(root, TEST_FILE, NUM_TEST_EXAMPLES)),
             DatasetSplit::Val => Err(SplitNotFoundError(split)),
         }
     }
 
-    fn load<P: AsRef<Path>>(root: P, files: &[&str]) -> Result<Self, DownloadError> {
+    fn load<P: AsRef<Path>>(root: P, file: &str, num: usize) -> Result<Self, DownloadError> {
         let root = root.as_ref();
         let root = if root.ends_with("cifar100") {
             root.to_path_buf()
@@ -78,18 +56,13 @@ impl Cifar100 {
             root.join("cifar100")
         };
 
-        let data_dir = root.join(DIR_NAME);
-        if !data_dir.exists() {
-            download_all(&root)?;
+        if !root.exists() || !root.join(file).exists() {
+            let uncompressed = download_to(&root, URL, MD5)?;
+            let mut archive = tar::Archive::new(&uncompressed[..]);
+            archive.unpack(&root)?;
         }
         let mut data = Vec::new();
-        for &f in files {
-            let f_path = data_dir.join(f);
-            if !f_path.exists() {
-                download_all(&root)?;
-            }
-            load_bin(f_path, &mut data)?;
-        }
+        load_bin(&root.join(file), &mut data, num)?;
 
         Ok(Self { data })
     }
@@ -98,15 +71,24 @@ impl Cifar100 {
 const URL: &str = "https://www.cs.toronto.edu/~kriz/cifar-100-binary.tar.gz";
 const MD5: &str = "03b5dce01913d631647c71ecec9e9cb8";
 
-fn load_bin<P: AsRef<Path>>(path: P, data: &mut Vec<(RgbImage, u8)>) -> Result<(), std::io::Error> {
+const NUM_TRAIN_EXAMPLES: usize = 50_000;
+const NUM_TEST_EXAMPLES: usize = 10_000;
+const TRAIN_FILE: &str = "cifar-100-binary/train.bin";
+const TEST_FILE: &str = "cifar-100-binary/test.bin";
+
+fn load_bin<P: AsRef<Path>>(
+    path: P,
+    data: &mut Vec<(RgbImage, u8)>,
+    num: usize,
+) -> Result<(), std::io::Error> {
     let f = File::open(path)?;
-    assert_eq!(f.metadata()?.len(), 3073 * 10_000);
+    assert_eq!(f.metadata()?.len(), 3074 * num as u64);
 
     let mut r = BufReader::new(f);
-    for _ in 0..10_000 {
-        let mut lbl_buf = [0u8; 1];
+    for _ in 0..num {
+        let mut lbl_buf = [0u8; 2];
         r.read_exact(&mut lbl_buf)?;
-        let lbl = lbl_buf[0];
+        let lbl = lbl_buf[1]; // use fine grained label
 
         let mut img_buf = vec![0u8; 3072];
         r.read_exact(&mut img_buf)?;
@@ -125,92 +107,26 @@ fn load_bin<P: AsRef<Path>>(path: P, data: &mut Vec<(RgbImage, u8)>) -> Result<(
     Ok(())
 }
 
-fn download_all<P: AsRef<Path>>(root: P) -> Result<(), DownloadError> {
-    download(root, URL, MD5)
-}
-
-fn download<P: AsRef<Path>>(root: P, url: &str, md5: &str) -> Result<(), DownloadError> {
-    let root = root.as_ref();
-    std::fs::create_dir_all(root)?;
-
-    let mut compressed = Vec::new();
-    let mut easy = Easy::new();
-    easy.url(url).unwrap();
-    easy.progress(true).unwrap();
-
-    println!("Downloading {url}");
-    {
-        let mut dl = easy.transfer();
-        let pb = indicatif::ProgressBar::new(1);
-        dl.progress_function(move |total_dl, cur_dl, _, _| {
-            pb.set_length(total_dl as u64);
-            pb.set_position(cur_dl as u64);
-            true
-        })?;
-        dl.write_function(|data| {
-            compressed.extend_from_slice(data);
-            Ok(data.len())
-        })?;
-        dl.perform()?;
-    }
-
-    println!("Verifying hash is {md5}");
-    let digest = md5::compute(&compressed);
-    if format!("{:?}", digest) != md5 {
-        return Err(DownloadError::Md5Mismatch);
-    }
-
-    println!("Deflating {} bytes", compressed.len());
-    let mut uncompressed = Vec::new();
-    let mut decoder = flate2::read::GzDecoder::new(&compressed[..]);
-    decoder.read_to_end(&mut uncompressed)?;
-
-    let mut archive = tar::Archive::new(&uncompressed[..]);
-    archive.unpack(root)?;
-
-    Ok(())
-}
-
 #[rustfmt::skip]
 pub const LABEL_NAMES: [&str; 100] = [
-    // aquatic mammals
-    "beaver", "dolphin", "otter", "seal", "whale",
-    // fish
-    "aquarium fish", "flatfish", "ray", "shark", "trout",
-    // flowers
-    "orchids", "poppies", "roses", "sunflowers", "tulips",
-    // food containers
-    "bottles", "bowls", "cans", "cups", "plates",
-    // fruit and vegetables
-    "apples", "mushrooms", "oranges", "pears", "sweet peppers",
-    // household electrical devices
-    "clock", "computer keyboard", "lamp", "telephone", "television",
-    // household furniture
-    "bed", "chair", "couch", "table", "wardrobe",
-    // insects
-    "bee", "beetle", "butterfly", "caterpillar", "cockroach",
-    // large carnivores
-    "bear", "leopard", "lion", "tiger", "wolf",
-    // large man-made outdoor things
-    "bridge", "castle", "house", "road", "skyscraper",
-    // large natural outdoor scenes
-    "cloud", "forest", "mountain", "plain", "sea",
-    // large omnivores and herbivores
-    "camel", "cattle", "chimpanzee", "elephant", "kangaroo",
-    // medium-sized mammals
-    "fox", "porcupine", "possum", "raccoon", "skunk",
-    // non-insect invertebrates
-    "crab", "lobster", "snail", "spider", "worm",
-    // people
-    "baby", "boy", "girl", "man", "woman",
-    // reptiles
-    "crocodile", "dinosaur", "lizard", "snake", "turtle",
-    // small mammals
-    "hamster", "mouse", "rabbit", "shrew", "squirrel",
-    // trees
-    "maple", "oak", "palm", "pine", "willow",
-    // vehicles 1
-    "bicycle", "bus", "motorcycle", "pickup truck", "train",
-    // vehicles 2
-    "lawn-mower", "rocket", "streetcar", "tank", "tractor",
+    "apple","aquatic_fish","baby","bear","beaver",
+    "bed", "bee", "beetle", "bicycle", "bottle",
+    "bowl", "boy", "bridge", "bus", "butterfly",
+    "camel", "can", "castle", "caterpillar", "cattle",
+    "chair", "chimpanzee", "clock", "cloud", "cockroach",
+    "couch", "crab", "crocodile", "cup", "dinosaur",
+    "dolphin", "elephant", "flatfish", "forest", "fox",
+    "girl", "hamster", "house", "kangaroo", "keyboard",
+    "lamp", "lawn_mower", "leopard", "lion", "lizard",
+    "lobster", "man", "maple_tree", "motorcycle", "mountain",
+    "mouse", "mushroom", "oak_tree", "orange", "orchid",
+    "otter", "palm_tree", "pear", "pickup_truck", "pine_tree",
+    "plain", "plate", "poppy", "porcupine", "possum",
+    "rabbit", "raccoon", "ray", "road", "rocket",
+    "rose", "sea", "seal", "shark", "shrew",
+    "skunk", "skyscraper", "snail", "snake", "spider",
+    "squirrel", "streetcar", "sunflower", "sweet_pepper", "table",
+    "tank", "telephone", "television", "tiger", "tractor",
+    "train", "trout", "tulip", "turtle", "wardrobe",
+    "whale", "willow_tree", "wolf", "woman", "worm",
 ];

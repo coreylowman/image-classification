@@ -16,11 +16,15 @@ keywords = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-curl = { version = "0.4.44", default-features = false }
-flate2 = { version = "1.0.25", default-features = false, features = ["rust_backend"] }
+curl = { version = "0.4.44", optional = true }
+flate2 = { version = "1.0.25", default-features = false, features = ["rust_backend"], optional = true }
+md5 = { version = "0.7.0", default-features = false, optional = true }
+tar = { version = "0.4.38", default-features = false, optional = true }
 indicatif = { version = "0.17.3", default-features = false }
-md5 = { version = "0.7.0", default-features = false }
-tar = { version = "0.4.38", default-features = false }
 image = { version = "0.24.5", default-features = false }
-dfdx = { path = "../dfdx" , features = ["nightly", "intel-mkl"] }
+dfdx = { path = "../dfdx" , features = ["nightly", "cuda"] }
 rand = { version = "0.8.5", default-features = false }
+
+[features]
+default = ["download"]
+download = ["dep:curl", "dep:flate2", "dep:md5", "dep:tar"]

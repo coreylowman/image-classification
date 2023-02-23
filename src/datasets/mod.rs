@@ -1,5 +1,6 @@
 pub mod cifar10;
 pub mod cifar100;
+#[cfg(feature = "download")]
 pub(crate) mod download;
 pub mod mnist;
 pub mod split;

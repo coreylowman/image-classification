@@ -17,27 +17,29 @@ type SmallResnet<const NUM_CLASSES: usize> = (
     (AvgPoolGlobal, Linear<256, NUM_CLASSES>),
 );
 
+type Dev = Cpu;
+type Dtype = f32;
+
 fn main() {
-    let dev: Cpu = Default::default();
+    let dev: Dev = Default::default();
     let mut rng = StdRng::seed_from_u64(0);
 
-    let mut model = dev.build_module::<SmallResnet<10>, f32>();
+    let mut model = dev.build_module::<SmallResnet<10>, Dtype>();
     let mut opt = Sgd::new(&model, Default::default());
 
     let train_data = Cifar10::<Train>::new("./datasets").unwrap();
 
-    let batch_size = Const::<16>;
+    let batch = Const::<16>;
 
     for i_epoch in 0.. {
-        for (img, lbl) in train_data.shuffled(&mut rng).batch(batch_size).collate() {
+        for (img, lbl) in train_data.shuffled(&mut rng).batch(batch).collate() {
             let start = Instant::now();
-            let img = img.map(|i| {
+            let imgs = dev.stack(img.map(|i| {
                 dev.tensor_from_vec(
-                    i.iter().map(|&p| p as f32 / 255.0).collect(),
+                    i.iter().map(|&p| p as Dtype / 255.0).collect(),
                     (Const::<3>, Const::<32>, Const::<32>),
                 )
-            });
-            let imgs = dev.stack(img);
+            }));
             let lbls = dev.one_hot_encode(Const::<10>, lbl.map(|l| *l));
             let pre_dur = start.elapsed();
 

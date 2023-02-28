@@ -1,12 +1,8 @@
 use std::time::Instant;
 
 use dfdx::{data::*, optim::Sgd, prelude::*};
-use image_classification::datasets::{Cifar10, DatasetSplit};
-use indicatif::ProgressIterator;
+use image_classification::datasets::{Cifar10, Train};
 use rand::prelude::*;
-
-#[repr(transparent)]
-struct Profile<T>(T);
 
 type ResidualBlock<const C: usize, const D: usize> = (
     (Conv2D<C, D, 3, 1, 1>, BatchNorm2D<D>, MaxPool2D<3>, ReLU),
@@ -22,25 +18,18 @@ type SmallResnet<const NUM_CLASSES: usize> = (
 );
 
 fn main() {
-    let dev: Cuda = Default::default();
+    let dev: Cpu = Default::default();
     let mut rng = StdRng::seed_from_u64(0);
 
     let mut model = dev.build_module::<SmallResnet<10>, f32>();
     let mut opt = Sgd::new(&model, Default::default());
 
-    let train_data = Cifar10::new("./datasets", DatasetSplit::Train)
-        .unwrap()
-        .unwrap();
+    let train_data = Cifar10::<Train>::new("./datasets").unwrap();
 
-    let batch_size = Const::<128>;
+    let batch_size = Const::<16>;
 
     for i_epoch in 0.. {
-        for (img, lbl) in train_data
-            .shuffled(&mut rng)
-            // .progress()
-            .batch(batch_size)
-            .collate()
-        {
+        for (img, lbl) in train_data.shuffled(&mut rng).batch(batch_size).collate() {
             let start = Instant::now();
             let img = img.map(|i| {
                 dev.tensor_from_vec(
@@ -49,13 +38,14 @@ fn main() {
                 )
             });
             let imgs = dev.stack(img);
-            let lbls = dev.one_hot_encode(Const::<10>, lbl);
+            let lbls = dev.one_hot_encode(Const::<10>, lbl.map(|l| *l));
             let pre_dur = start.elapsed();
 
             let start = Instant::now();
             let logits = model.forward_mut(imgs.traced());
             let loss = cross_entropy_with_logits_loss(logits, lbls);
             let fwd_dur = start.elapsed();
+            let loss_val = loss.array();
 
             let start = Instant::now();
             let grads = loss.backward();
@@ -66,7 +56,7 @@ fn main() {
             let opt_dur = start.elapsed();
 
             println!(
-                "preprocess={:?} fwd={:?} bwd={:?} opt={:?}",
+                "loss={loss_val} | preprocess={:?} fwd={:?} bwd={:?} opt={:?}",
                 pre_dur, fwd_dur, bwd_dur, opt_dur
             );
         }

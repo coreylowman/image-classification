@@ -1,9 +1,8 @@
-#[derive(Debug, Clone, Copy)]
-pub enum DatasetSplit {
-    Train,
-    Test,
-    Val,
-}
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Train;
 
-#[derive(Debug)]
-pub struct SplitNotFoundError(pub DatasetSplit);
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Test;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Val;

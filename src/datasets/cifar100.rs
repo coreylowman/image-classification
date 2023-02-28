@@ -8,21 +8,22 @@ use image::{Rgb, RgbImage};
 
 use super::{
     download::{download_to, DownloadError},
-    split::{DatasetSplit, SplitNotFoundError},
+    split::{Test, Train},
 };
 
-pub struct Cifar100 {
+pub struct Cifar100<Split> {
     data: Vec<(RgbImage, u8)>,
+    pub split: Split,
 }
 
-impl std::ops::Index<usize> for Cifar100 {
+impl<S> std::ops::Index<usize> for Cifar100<S> {
     type Output = (RgbImage, u8);
     fn index(&self, index: usize) -> &Self::Output {
         &self.data[index]
     }
 }
 
-impl Cifar100 {
+impl<S> Cifar100<S> {
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -36,19 +37,25 @@ impl Cifar100 {
     }
 }
 
-impl Cifar100 {
-    pub fn new<P: AsRef<Path>>(
-        root: P,
-        split: DatasetSplit,
-    ) -> Result<Result<Self, DownloadError>, SplitNotFoundError> {
-        match split {
-            DatasetSplit::Train => Ok(Self::load(root, TRAIN_FILE, NUM_TRAIN_EXAMPLES)),
-            DatasetSplit::Test => Ok(Self::load(root, TEST_FILE, NUM_TEST_EXAMPLES)),
-            DatasetSplit::Val => Err(SplitNotFoundError(split)),
-        }
+impl Cifar100<Train> {
+    pub fn new<P: AsRef<Path>>(root: P) -> Result<Self, DownloadError> {
+        Self::load(root, Train, TRAIN_FILE, NUM_TRAIN_EXAMPLES)
     }
+}
 
-    fn load<P: AsRef<Path>>(root: P, file: &str, num: usize) -> Result<Self, DownloadError> {
+impl Cifar100<Test> {
+    pub fn new<P: AsRef<Path>>(root: P) -> Result<Self, DownloadError> {
+        Self::load(root, Test, TEST_FILE, NUM_TEST_EXAMPLES)
+    }
+}
+
+impl<S> Cifar100<S> {
+    fn load<P: AsRef<Path>>(
+        root: P,
+        split: S,
+        file: &str,
+        num: usize,
+    ) -> Result<Self, DownloadError> {
         let root = root.as_ref();
         let root = if root.ends_with("cifar100") {
             root.to_path_buf()
@@ -64,7 +71,7 @@ impl Cifar100 {
         let mut data = Vec::new();
         load_bin(&root.join(file), &mut data, num)?;
 
-        Ok(Self { data })
+        Ok(Self { data, split })
     }
 }
 

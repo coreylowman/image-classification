@@ -8,50 +8,51 @@ use image::{Rgb, RgbImage};
 
 use super::{
     download::{download_to, DownloadError},
-    split::{DatasetSplit, SplitNotFoundError},
+    split::{Test, Train},
 };
 
-pub struct Cifar10 {
-    data: Vec<(RgbImage, u8)>,
+pub struct Cifar10<S> {
+    data: Vec<(RgbImage, usize)>,
+    pub split: S,
 }
 
-impl std::ops::Index<usize> for Cifar10 {
-    type Output = (RgbImage, u8);
+impl<S> std::ops::Index<usize> for Cifar10<S> {
+    type Output = (RgbImage, usize);
     fn index(&self, index: usize) -> &Self::Output {
         &self.data[index]
     }
 }
 
-impl dfdx::data::ExactSizeDataset for Cifar10 {
-    type Item = (image::RgbImage, usize);
-    fn get(&self, index: usize) -> Self::Item {
-        let (img, lbl) = &self.data[index];
-        (img.clone(), *lbl as usize)
+impl<S> dfdx::data::ExactSizeDataset for Cifar10<S> {
+    type Item<'a> = &'a (image::RgbImage, usize) where Self: 'a;
+    fn get(&self, index: usize) -> Self::Item<'_> {
+        &self.data[index]
     }
     fn len(&self) -> usize {
         self.data.len()
     }
 }
 
-impl Cifar10 {
+impl<S> Cifar10<S> {
     pub fn label_name(&self, lbl: u8) -> &'static str {
         LABEL_NAMES[lbl as usize]
     }
 }
 
-impl Cifar10 {
-    pub fn new<P: AsRef<Path>>(
-        root: P,
-        split: DatasetSplit,
-    ) -> Result<Result<Self, DownloadError>, SplitNotFoundError> {
-        match split {
-            DatasetSplit::Train => Ok(Self::load(root, &TRAIN_FILES)),
-            DatasetSplit::Test => Ok(Self::load(root, &TEST_FILES)),
-            DatasetSplit::Val => Err(SplitNotFoundError(split)),
-        }
+impl Cifar10<Train> {
+    pub fn new<P: AsRef<Path>>(root: P) -> Result<Self, DownloadError> {
+        Self::load(root, Train, &TRAIN_FILES)
     }
+}
 
-    fn load<P: AsRef<Path>>(root: P, files: &[&str]) -> Result<Self, DownloadError> {
+impl Cifar10<Test> {
+    pub fn new<P: AsRef<Path>>(root: P) -> Result<Self, DownloadError> {
+        Self::load(root, Test, &TEST_FILES)
+    }
+}
+
+impl<S> Cifar10<S> {
+    fn load<P: AsRef<Path>>(root: P, split: S, files: &[&str]) -> Result<Self, DownloadError> {
         let root = root.as_ref();
         let root = if root.ends_with("cifar10") {
             root.to_path_buf()
@@ -69,7 +70,7 @@ impl Cifar10 {
             load_bin(&root.join(f), &mut data)?;
         }
 
-        Ok(Self { data })
+        Ok(Self { data, split })
     }
 }
 
@@ -84,7 +85,10 @@ const TRAIN_FILES: [&str; 5] = [
 ];
 const TEST_FILES: [&str; 1] = ["cifar-10-batches-bin/test_batch.bin"];
 
-fn load_bin<P: AsRef<Path>>(path: P, data: &mut Vec<(RgbImage, u8)>) -> Result<(), std::io::Error> {
+fn load_bin<P: AsRef<Path>>(
+    path: P,
+    data: &mut Vec<(RgbImage, usize)>,
+) -> Result<(), std::io::Error> {
     let f = File::open(path)?;
     assert_eq!(f.metadata()?.len(), 3073 * 10_000);
 
@@ -92,7 +96,7 @@ fn load_bin<P: AsRef<Path>>(path: P, data: &mut Vec<(RgbImage, u8)>) -> Result<(
     for _ in 0..10_000 {
         let mut lbl_buf = [0u8; 1];
         r.read_exact(&mut lbl_buf)?;
-        let lbl = lbl_buf[0];
+        let lbl = lbl_buf[0] as usize;
 
         let mut img_buf = vec![0u8; 3072];
         r.read_exact(&mut img_buf)?;

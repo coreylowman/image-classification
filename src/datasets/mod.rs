@@ -8,4 +8,4 @@ pub mod split;
 pub use cifar10::Cifar10;
 pub use cifar100::Cifar100;
 pub use mnist::Mnist;
-pub use split::DatasetSplit;
+pub use split::{Test, Train, Val};

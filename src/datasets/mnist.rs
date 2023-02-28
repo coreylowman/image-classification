@@ -7,27 +7,30 @@ use std::{
 
 use super::{
     download::{download_to, DownloadError},
-    split::{DatasetSplit, SplitNotFoundError},
+    split::{Test, Train},
 };
 
-pub struct Mnist {
+pub struct Mnist<Split> {
     data: Vec<(image::GrayImage, u8)>,
+    pub split: Split,
 }
 
-impl Mnist {
-    pub fn new<P: AsRef<Path>>(
-        root: P,
-        split: DatasetSplit,
-    ) -> Result<Result<Self, DownloadError>, SplitNotFoundError> {
-        match split {
-            DatasetSplit::Train => Ok(Self::load(root, TRAIN_IMG_NAME, TRAIN_LBL_NAME, 60_000)),
-            DatasetSplit::Test => Ok(Self::load(root, TEST_IMG_NAME, TEST_LBL_NAME, 10_000)),
-            DatasetSplit::Val => Err(SplitNotFoundError(split)),
-        }
+impl Mnist<Train> {
+    pub fn new<P: AsRef<Path>>(root: P) -> Result<Self, DownloadError> {
+        Self::load(root, Train, TRAIN_IMG_NAME, TRAIN_LBL_NAME, 60_000)
     }
+}
 
+impl Mnist<Test> {
+    pub fn new<P: AsRef<Path>>(root: P) -> Result<Self, DownloadError> {
+        Self::load(root, Test, TEST_IMG_NAME, TEST_LBL_NAME, 10_000)
+    }
+}
+
+impl<S> Mnist<S> {
     fn load<P: AsRef<Path>>(
         root: P,
+        split: S,
         img_name: &str,
         lbl_name: &str,
         num: usize,
@@ -60,11 +63,11 @@ impl Mnist {
             let lbl = lbl_buf[0];
             data.push((img, lbl))
         }
-        Ok(Self { data })
+        Ok(Self { data, split })
     }
 }
 
-impl Mnist {
+impl<S> Mnist<S> {
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -78,7 +81,7 @@ impl Mnist {
     }
 }
 
-impl std::ops::Index<usize> for Mnist {
+impl<S> std::ops::Index<usize> for Mnist<S> {
     type Output = (GrayImage, u8);
     fn index(&self, index: usize) -> &Self::Output {
         &self.data[index]

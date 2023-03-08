@@ -25,6 +25,7 @@ fn main() {
     let mut rng = StdRng::seed_from_u64(0);
 
     let mut model = dev.build_module::<SmallResnet<10>, Dtype>();
+    let mut grads = model.alloc_grads();
     let mut opt = Sgd::new(&model, Default::default());
 
     let train_data = Cifar10::<Train>::new("./datasets").unwrap();
@@ -34,27 +35,30 @@ fn main() {
     for i_epoch in 0.. {
         for (img, lbl) in train_data.shuffled(&mut rng).batch(batch).collate() {
             let start = Instant::now();
-            let imgs = dev.stack(img.map(|i| {
-                dev.tensor_from_vec(
-                    i.iter().map(|&p| p as Dtype / 255.0).collect(),
-                    (Const::<3>, Const::<32>, Const::<32>),
-                )
-            }));
+            let imgs = img
+                .map(|i| {
+                    dev.tensor_from_vec(
+                        i.iter().map(|&p| p as Dtype / 255.0).collect(),
+                        (Const::<3>, Const::<32>, Const::<32>),
+                    )
+                })
+                .stack();
             let lbls = dev.one_hot_encode(Const::<10>, lbl.map(|l| *l));
             let pre_dur = start.elapsed();
 
             let start = Instant::now();
-            let logits = model.forward_mut(imgs.traced());
+            let logits = model.forward_mut(imgs.traced_into(grads));
             let loss = cross_entropy_with_logits_loss(logits, lbls);
             let fwd_dur = start.elapsed();
             let loss_val = loss.array();
 
             let start = Instant::now();
-            let grads = loss.backward();
+            grads = loss.backward();
             let bwd_dur = start.elapsed();
 
             let start = Instant::now();
-            opt.update(&mut model, grads).unwrap();
+            opt.update(&mut model, &grads).unwrap();
+            model.zero_grads(&mut grads);
             let opt_dur = start.elapsed();
 
             println!(

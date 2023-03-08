@@ -32,23 +32,29 @@ fn main() {
 
     let batch = Const::<16>;
 
-    for i_epoch in 0.. {
-        for (img, lbl) in train_data.shuffled(&mut rng).batch(batch).collate() {
-            let start = Instant::now();
-            let imgs = img
-                .map(|i| {
-                    dev.tensor_from_vec(
-                        i.iter().map(|&p| p as Dtype / 255.0).collect(),
-                        (Const::<3>, Const::<32>, Const::<32>),
-                    )
-                })
-                .stack();
-            let lbls = dev.one_hot_encode(Const::<10>, lbl.map(|l| *l));
-            let pre_dur = start.elapsed();
+    let preprocess = |(img, lbl): <Cifar10<Train> as ExactSizeDataset>::Item<'_>| {
+        let mut one_hotted = [0.0; 10];
+        one_hotted[*lbl] = 1.0;
+        (
+            dev.tensor_from_vec(
+                img.iter().map(|&p| p as Dtype / 255.0).collect(),
+                (Const::<3>, Const::<32>, Const::<32>),
+            ),
+            dev.tensor(one_hotted),
+        )
+    };
 
+    for i_epoch in 0.. {
+        for (img, lbl) in train_data
+            .shuffled(&mut rng)
+            .map(preprocess)
+            .batch(batch)
+            .collate()
+            .stack()
+        {
             let start = Instant::now();
-            let logits = model.forward_mut(imgs.traced_into(grads));
-            let loss = cross_entropy_with_logits_loss(logits, lbls);
+            let logits = model.forward_mut(img.traced_into(grads));
+            let loss = cross_entropy_with_logits_loss(logits, lbl);
             let fwd_dur = start.elapsed();
             let loss_val = loss.array();
 
@@ -62,8 +68,8 @@ fn main() {
             let opt_dur = start.elapsed();
 
             println!(
-                "loss={loss_val} | preprocess={:?} fwd={:?} bwd={:?} opt={:?}",
-                pre_dur, fwd_dur, bwd_dur, opt_dur
+                "loss={loss_val} | fwd={:?} bwd={:?} opt={:?}",
+                fwd_dur, bwd_dur, opt_dur
             );
         }
     }

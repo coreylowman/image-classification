@@ -22,7 +22,7 @@ md5 = { version = "0.7.0", default-features = false, optional = true }
 tar = { version = "0.4.38", default-features = false, optional = true }
 indicatif = { version = "0.17.3", default-features = false }
 image = { version = "0.24.5", default-features = false }
-dfdx = { path = "../dfdx" , features = ["nightly", "threaded-cpu"] }
+dfdx = { path = "../dfdx" , features = ["nightly", "cpu-par-matmul"] }
 rand = { version = "0.8.5", default-features = false }
 
 [features]

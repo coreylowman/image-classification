@@ -47,31 +47,34 @@ def main():
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
 
-    dev = torch.device("cpu")
-    model = small_resnet(10)
+    dev = torch.device("cuda")
+    model = small_resnet(10).to(dev)
     opt = optim.SGD(model.parameters(), lr=0.01)
 
     criterion = nn.CrossEntropyLoss()
 
     train_data = torchvision.datasets.CIFAR10("./datasets", train=True, download=True, transform=torchvision.transforms.ToTensor())
-    batch_size = 16
+    batch_size = 64
     loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
     for i_epoch in range(100):
         for img, lbl in loader:
             img.requires_grad = True
             start = time.perf_counter()
-            logits = model(img)
-            loss = criterion(logits, lbl)
+            logits = model(img.to(dev))
+            loss = criterion(logits, lbl.to(dev))
+            torch.cuda.synchronize()
             fwd_dur = (time.perf_counter() - start) * 1000
 
             start = time.perf_counter()
             opt.zero_grad()
             loss.backward()
+            torch.cuda.synchronize()
             bwd_dur = (time.perf_counter() - start) * 1000
 
             start = time.perf_counter()
             opt.step()
+            torch.cuda.synchronize()
             opt_dur = (time.perf_counter() - start) * 1000
 
             print(f"{loss.item()} | fwd={fwd_dur:.1f}, bwd={bwd_dur:.1f} opt={opt_dur:.1f}")

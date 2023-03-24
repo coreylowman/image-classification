@@ -17,7 +17,7 @@ type SmallResnet<const NUM_CLASSES: usize> = (
     (AvgPoolGlobal, Linear<256, NUM_CLASSES>),
 );
 
-type Dev = Cpu;
+type Dev = Cuda;
 type Dtype = f32;
 
 fn main() {
@@ -30,7 +30,7 @@ fn main() {
 
     let train_data = Cifar10::<Train>::new("./datasets").unwrap();
 
-    let batch = Const::<16>;
+    let batch = Const::<64>;
 
     let preprocess = |(img, lbl): <Cifar10<Train> as ExactSizeDataset>::Item<'_>| {
         let mut one_hotted = [0.0; 10];
@@ -44,27 +44,31 @@ fn main() {
         )
     };
 
-    for i_epoch in 0.. {
+    for i_epoch in 0..1 {
         for (img, lbl) in train_data
             .shuffled(&mut rng)
             .map(preprocess)
             .batch(batch)
             .collate()
             .stack()
+            .take(30)
         {
             let start = Instant::now();
             let logits = model.forward_mut(img.traced(grads));
             let loss = cross_entropy_with_logits_loss(logits, lbl);
+            dev.synchronize().unwrap();
             let fwd_dur = start.elapsed();
             let loss_val = loss.array();
 
             let start = Instant::now();
             grads = loss.backward();
+            dev.synchronize().unwrap();
             let bwd_dur = start.elapsed();
 
             let start = Instant::now();
             opt.update(&mut model, &grads).unwrap();
             model.zero_grads(&mut grads);
+            dev.synchronize().unwrap();
             let opt_dur = start.elapsed();
 
             println!(

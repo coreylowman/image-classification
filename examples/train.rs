@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use dfdx::{data::*, optim::Sgd, prelude::*};
-use image_classification::datasets::{Cifar10, Train};
+use image_classification::datasets::{Cifar10, Test, Train};
 use rand::prelude::*;
 
 type ResidualBlock<const C: usize, const D: usize> = (
@@ -30,7 +30,7 @@ fn main() {
 
     let train_data = Cifar10::<Train>::new("./datasets").unwrap();
 
-    let batch = Const::<64>;
+    let batch = Const::<128>;
 
     let preprocess = |(img, lbl): <Cifar10<Train> as ExactSizeDataset>::Item<'_>| {
         let mut one_hotted = [0.0; 10];
@@ -44,14 +44,14 @@ fn main() {
         )
     };
 
-    for i_epoch in 0..1 {
+    for i_epoch in 0..10 {
         for (img, lbl) in train_data
             .shuffled(&mut rng)
             .map(preprocess)
             .batch(batch)
             .collate()
             .stack()
-            .take(30)
+            .take(128)
         {
             let start = Instant::now();
             let logits = model.forward_mut(img.traced(grads));
@@ -77,4 +77,63 @@ fn main() {
             );
         }
     }
+
+    // Create the test dataset
+    let test_data = {
+        let mut data = Vec::with_capacity(10_000);
+        for (img, lbl) in Cifar10::<Test>::new("./datasets").unwrap().iter() {
+            let mut one_hotted = [0.0; 10];
+            one_hotted[*lbl] = 1.0;
+            data.push((
+                dev.tensor_from_vec(
+                    img.iter().map(|&p| p as Dtype / 255.0).collect(),
+                    (Const::<3>, Const::<32>, Const::<32>),
+                ),
+                dev.tensor(one_hotted),
+            ));
+        }
+        data
+    };
+
+    // Create a counter value
+    let mut correct = 0;
+    // Evaluate each image in the test set using the trained model
+    for i in 0..test_data.len() {
+        // Get the i'th image from the test dataset
+        let img = test_data[i].0.clone();
+        // Evaluate it via forwarding with the model
+        let base_result = model.forward(img);
+        // Convert the result from a tensor to a stdlib Vec
+        let result = dev.tensor_to_vec(&base_result);
+
+        // Get the i'th label from the test dataset and select the values
+        let label = &test_data[i].1;
+        // Convert those labels to a Vec<Dtype> (Vec<f32>)
+        let label: Vec<Dtype> = dev
+            .tensor_to_vec(label)
+            .iter()
+            .map(|x| *x as Dtype)
+            .collect();
+
+        // We could print the outputs side-to-side for each label vs. evaluated result
+        // println!("{:.2?} | {:?}", &result, &label);
+
+        // Compare the labels, and if the max index of each vector is the same,
+        // count that as correct and increment the counter
+        if (get_max_index(result) == get_max_index(label)) {
+            correct += 1;
+        }
+    }
+    // Print the total correct
+    dbg!(correct);
+}
+
+fn get_max_index(v: Vec<f32>) -> usize {
+    let mut max_index = 0;
+    for i in 0..v.len() {
+        if v[i] > v[max_index] {
+            max_index = i;
+        }
+    }
+    max_index
 }

@@ -1,3 +1,5 @@
+#![feature(generic_const_exprs)]
+
 use std::time::Instant;
 
 use dfdx::{data::*, optim::Sgd, prelude::*};
@@ -56,19 +58,19 @@ fn main() {
             let start = Instant::now();
             let logits = model.forward_mut(img.traced(grads));
             let loss = cross_entropy_with_logits_loss(logits, lbl);
-            dev.synchronize().unwrap();
+            dev.synchronize();
             let fwd_dur = start.elapsed();
             let loss_val = loss.array();
 
             let start = Instant::now();
             grads = loss.backward();
-            dev.synchronize().unwrap();
+            dev.synchronize();
             let bwd_dur = start.elapsed();
 
             let start = Instant::now();
             opt.update(&mut model, &grads).unwrap();
             model.zero_grads(&mut grads);
-            dev.synchronize().unwrap();
+            dev.synchronize();
             let opt_dur = start.elapsed();
 
             println!(
